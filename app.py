@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 # ==========================================
 # 1. SETUP E CONNESSIONI CLOUD
 # ==========================================
-st.set_page_config(page_title="AI PM Digital Colleague", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="AI Digital Project Manager", page_icon="🚀", layout="wide")
 
 # Recupero chiavi in modo sicuro dai Secrets di Streamlit Cloud
 GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY"))
