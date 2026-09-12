@@ -11,9 +11,8 @@ from langchain_core.documents import Document
 # ==========================================
 # 1. SETUP E CONNESSIONI CLOUD
 # ==========================================
-st.set_page_config(page_title="AI Digital Project Manager", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="AI PM Digital Colleague", page_icon="🚀", layout="wide")
 
-# Recupero chiavi in modo sicuro dai Secrets di Streamlit Cloud
 GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY"))
 QDRANT_URL = st.secrets.get("QDRANT_URL", os.getenv("QDRANT_URL"))
 QDRANT_API_KEY = st.secrets.get("QDRANT_API_KEY", os.getenv("QDRANT_API_KEY"))
@@ -24,11 +23,9 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-# Inizializza Motore Logico (LLM) ed Embeddings (Vettorializzazione)
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
-# Connessione al Database Vettoriale Permanente (Qdrant)
 @st.cache_resource
 def get_qdrant_client():
     client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
@@ -49,23 +46,55 @@ vectorstore = Qdrant(client=qdrant_client, collection_name=collection_name, embe
 # ==========================================
 @tool("Salva Conoscenza Aziendale")
 def tool_salva_conoscenza(testo: str, categoria: str) -> str:
-    """Salva una nuova regola, referente o metodo. Categorie ammesse: 'regola_metodologica', 'mappa_stakeholder', 'storico_progetti'."""
-    doc = Document(page_content=testo, metadata={"tipo": categoria})
+    """Salva una nuova informazione. L'utente può chiederti di usare categorie esistenti o di crearne di nuove e personalizzate (es. 'rischi', 'baseline_activity', 'stack_tecnologico')."""
+    doc = Document(page_content=testo, metadata={"tipo": categoria.lower()})
     vectorstore.add_documents([doc])
-    return f"Fatto. Informazione salvata in memoria nella categoria: {categoria}."
+    return f"Fatto. Informazione salvata nella categoria: {categoria.upper()}."
 
 @tool("Ricerca Base di Conoscenza")
 def tool_ricerca_conoscenza(query: str) -> str:
-    """Usa questo tool per rispondere a domande sullo storico o per recuperare regole e referenti."""
-    docs = vectorstore.similarity_search(query, k=4)
+    """Ricerca semantica: usa questo tool per rispondere a domande specifiche su regole, referenti, o architetture cercando nel database."""
+    docs = vectorstore.similarity_search(query, k=6)
     if not docs:
         return "Non ho trovato informazioni in memoria a riguardo."
     risultati = [f"[{d.metadata.get('tipo', 'generico').upper()}]: {d.page_content}" for d in docs]
     return "\n\n".join(risultati)
 
+@tool("Esplora Memoria Completa")
+def tool_esplora_memoria(categoria_specifica: str = "") -> str:
+    """Usa questo tool se l'utente ti chiede di mostrargli o elencare tutte le categorie, o di fargli vedere tutto il contenuto di una specifica categoria.
+    Se 'categoria_specifica' è vuota, restituisci solo la lista delle categorie. Se contiene un nome (es. 'rischi'), restituisci tutto il testo di quella categoria."""
+    records, _ = qdrant_client.scroll(
+        collection_name=collection_name,
+        limit=200, 
+        with_payload=True,
+        with_vectors=False
+    )
+    
+    if not records:
+        return "Il database è attualmente vuoto."
+        
+    mappatura = {}
+    for r in records:
+        cat = r.payload.get("metadata", {}).get("tipo", "generale")
+        testo = r.payload.get("page_content", "Senza testo")
+        if cat not in mappatura:
+            mappatura[cat] = []
+        mappatura[cat].append(testo)
+        
+    if categoria_specifica:
+        cat_lower = categoria_specifica.lower()
+        if cat_lower in mappatura:
+            contenuti = "\n".join([f"- {testo}" for testo in mappatura[cat_lower]])
+            return f"Contenuto della categoria {cat_lower.upper()}:\n{contenuti}"
+        return f"Categoria '{categoria_specifica}' non trovata."
+        
+    elenco_categorie = "\n".join([f"- {cat.upper()} ({len(elementi)} record)" for cat, elementi in mappatura.items()])
+    return f"Categorie attive in memoria:\n{elenco_categorie}\n\n(Se serve, posso mostrarti il contenuto di una specifica categoria)."
+
 @tool("Elimina e Sovrascrivi Conoscenza")
 def tool_elimina_conoscenza(vecchia_informazione: str) -> str:
-    """Usa questo tool se l'utente corregge una regola/referente obsoleto. Passa in input la VECCHIA informazione da cercare e distruggere."""
+    """Usa questo tool per cancellare un dato obsoleto dal database prima di salvarne uno nuovo."""
     vettore_query = embeddings.embed_query(vecchia_informazione)
     risultati = qdrant_client.search(
         collection_name=collection_name,
@@ -91,7 +120,8 @@ tab1, tab2 = st.tabs(["🧠 Memoria & Addestramento", "🚀 Pianificazione Proge
 with tab1:
     st.header("Addestra e Interroga il Sistema")
     st.markdown("""
-    * **Insegna:** *"Le epiche non durano più di 1 mese."*
+    * **Esplora:** *"Mostrami tutte le categorie che hai in memoria"* oppure *"Elencami tutto ciò che c'è nei rischi."*
+    * **Insegna:** *"Crea la categoria 'baseline_activity' e inserisci questa regola..."*
     * **Interroga:** *"Chi è il referente per l'integrazione Oracle?"*
     * **Correggi:** *"Ti sbagli, il referente non è Mario, è Luigi."*
     """)
@@ -102,29 +132,29 @@ with tab1:
     for msg in st.session_state.chat_history:
         st.chat_message(msg["role"]).write(msg["content"])
         
-    user_input = st.chat_input("Scrivi un comando o una regola...")
+    user_input = st.chat_input("Esplora le categorie, scrivi un comando o una regola...")
     
     if user_input:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         st.chat_message("user").write(user_input)
         
-        # Agente 1: Architetto della Conoscenza
         agente_architetto = Agent(
             role='Knowledge Architect & Memory Manager',
-            goal='Gestire la memoria del team: rispondere a domande, salvare regole e cancellare dati vecchi.',
-            backstory='Sei il cervello operativo. Se l\'utente fa una domanda, cerchi nel DB. Se insegna qualcosa, lo salvi. Se corregge, elimini prima il dato obsoleto tramite tool.',
-            tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_elimina_conoscenza],
+            goal='Gestire la memoria del team: esplorare categorie, rispondere a domande, salvare regole in categorie dinamiche e cancellare dati obsoleti.',
+            backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
+            tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
             llm=llm,
             verbose=True
         )
         
         task_addestramento = Task(
             description=f'''Analizza: "{user_input}".
-            1. Se DOMANDA: Cerca e rispondi.
-            2. Se NUOVO DATO: Salva nel DB.
-            3. Se CORREZIONE: Usa PRIMA il tool elimina per distruggere il vecchio dato, POI salva il nuovo.
-            Fornisci una risposta discorsiva sulle azioni intraprese.''',
-            expected_output='Risposta che conferma il salvataggio, la ricerca o la cancellazione avvenuta nel database.',
+            1. Se l'utente vuole ESPLORARE (es. "che categorie hai?", "mostrami i rischi"): Usa il tool Esplora Memoria.
+            2. Se l'utente fa una DOMANDA MIRATA (es. "chi è il referente per X?"): Usa il tool Ricerca Base di Conoscenza.
+            3. Se l'utente fornisce un NUOVO DATO: Usa il tool Salva Conoscenza, creando la categoria richiesta.
+            4. Se è una CORREZIONE: Usa il tool Elimina per distruggere il vecchio dato, poi il tool Salva per il nuovo.
+            Fornisci una risposta discorsiva sulle azioni intraprese o sui dati trovati.''',
+            expected_output='Risposta che elenca le categorie, mostra i dati trovati o conferma l\'aggiornamento del database.',
             agent=agente_architetto
         )
         
@@ -149,7 +179,6 @@ with tab2:
     if submit_btn and nome_progetto and impatti:
         st.info("Risveglio agenti e analisi database in corso...")
         
-        # Agente 2: Analista
         analista = Agent(
             role='System & Risk Analyst',
             goal='Analizzare gli impatti e trovare referenti e rischi storici dal DB.',
@@ -158,7 +187,6 @@ with tab2:
             llm=llm
         )
         
-        # Agente 3: Planner
         planner = Agent(
             role='Agile Delivery Manager',
             goal='Creare una WBS (Epiche e Sprint) coerente con le regole aziendali estratte dall\'analista.',
@@ -166,7 +194,6 @@ with tab2:
             llm=llm
         )
         
-        # Agente 4: Scribe
         scribe = Agent(
             role='Jira Scribe & Stakeholder Communicator',
             goal='Redigere ticket Jira e comunicazioni.',
@@ -199,3 +226,4 @@ with tab2:
         st.success("Analisi e Pianificazione Completata!")
         st.markdown("### Output Operativo del Team")
         st.markdown(risultato_finale.raw)
+
