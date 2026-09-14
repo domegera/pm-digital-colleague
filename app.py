@@ -2,9 +2,9 @@ import os
 import streamlit as st
 from pydantic import BaseModel, Field
 from typing import Type
-from crewai import Agent, Task, Crew, Process, LLM
+from crewai import Agent, Task, Crew, Process
 from crewai.tools import BaseTool
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -23,18 +23,20 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
     st.error("⚠️ Chiavi API mancanti. Configura i Secrets su Streamlit Cloud.")
     st.stop()
 
-# Impostiamo entrambe le variabili per accontentare sia Langchain che CrewAI
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
 
-# Motore LLM nativo di CrewAI (risolve il ValidationError)
-agente_llm = LLM(
-    model="gemini/gemini-1.5-flash",
-    api_key=GOOGLE_API_KEY,
-    temperature=0.2
+# Ripristiniamo il wrapper Langchain (stabile con i tool di Gemini)
+agente_llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-flash",
+    temperature=0.2,
+    google_api_key=GOOGLE_API_KEY
 )
 
-embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/text-embedding-004", 
+    google_api_key=GOOGLE_API_KEY
+)
 
 @st.cache_resource
 def get_qdrant_client():
