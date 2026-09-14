@@ -4,3 +4,4 @@ langchain-google-genai
 langchain-qdrant
 qdrant-client
 sentence-transformers
+langchain-community
