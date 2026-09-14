@@ -3,3 +3,4 @@ crewai
 langchain-google-genai
 langchain-qdrant
 qdrant-client
+chromadb>=0.5.3
