@@ -34,8 +34,9 @@ agente_llm = LLM(
 )
 
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/text-embedding-004", 
-    google_api_key=GOOGLE_API_KEY
+    model="text-embedding-004", 
+    google_api_key=GOOGLE_API_KEY,
+    task_type="retrieval_document"
 )
 
 @st.cache_resource
