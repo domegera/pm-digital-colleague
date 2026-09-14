@@ -1,8 +1,8 @@
 import os
 import streamlit as st
-from crewai import Agent, Task, Crew, Process
-from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from crewai import Agent, Task, Crew, Process, LLM
+from crewai.tools import tool
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -22,8 +22,15 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
     st.stop()
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
+os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY # Requisito per il nuovo LLM di CrewAI
 
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
+# Nuova sintassi CrewAI per il motore LLM
+agente_llm = LLM(
+    model="gemini/gemini-1.5-flash",
+    api_key=GOOGLE_API_KEY,
+    temperature=0.2
+)
+
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
@@ -44,14 +51,16 @@ vectorstore = Qdrant(client=qdrant_client, collection_name=collection_name, embe
 # ==========================================
 # 2. DEFINIZIONE TOOLS DI MEMORIA RAG
 # ==========================================
-@tool("Salva Conoscenza Aziendale")
+# Usiamo il decoratore base di CrewAI senza argomenti per prevenire errori Pydantic
+
+@tool
 def tool_salva_conoscenza(testo: str, categoria: str) -> str:
-    """Salva una nuova informazione. L'utente può chiederti di usare categorie esistenti o di crearne di nuove e personalizzate (es. 'rischi', 'baseline_activity', 'stack_tecnologico')."""
+    """Salva una nuova informazione. L'utente può chiederti di usare categorie esistenti o di crearne di nuove (es. 'rischi', 'baseline_activity', 'stack_tecnologico')."""
     doc = Document(page_content=testo, metadata={"tipo": categoria.lower()})
     vectorstore.add_documents([doc])
     return f"Fatto. Informazione salvata nella categoria: {categoria.upper()}."
 
-@tool("Ricerca Base di Conoscenza")
+@tool
 def tool_ricerca_conoscenza(query: str) -> str:
     """Ricerca semantica: usa questo tool per rispondere a domande specifiche su regole, referenti, o architetture cercando nel database."""
     docs = vectorstore.similarity_search(query, k=6)
@@ -60,17 +69,15 @@ def tool_ricerca_conoscenza(query: str) -> str:
     risultati = [f"[{d.metadata.get('tipo', 'generico').upper()}]: {d.page_content}" for d in docs]
     return "\n\n".join(risultati)
 
-@tool("Esplora Memoria Completa")
+@tool
 def tool_esplora_memoria(categoria_specifica: str) -> str:
-    """Usa questo tool per elencare tutte le categorie o vederne una specifica.
-    Se vuoi la lista completa di tutte le categorie, passa esattamente la parola 'TUTTE' come parametro."""
+    """Usa questo tool per elencare tutte le categorie o vederne una specifica. Se vuoi la lista completa di tutte le categorie, passa la parola 'TUTTE' come parametro."""
     records, _ = qdrant_client.scroll(
         collection_name=collection_name,
         limit=200, 
         with_payload=True,
         with_vectors=False
     )
-    
     if not records:
         return "Il database è attualmente vuoto."
         
@@ -92,7 +99,7 @@ def tool_esplora_memoria(categoria_specifica: str) -> str:
     elenco_categorie = "\n".join([f"- {cat.upper()} ({len(elementi)} record)" for cat, elementi in mappatura.items()])
     return f"Categorie attive in memoria:\n{elenco_categorie}\n\n(Se serve, posso mostrarti il contenuto di una specifica categoria)."
 
-@tool("Elimina e Sovrascrivi Conoscenza")
+@tool
 def tool_elimina_conoscenza(vecchia_informazione: str) -> str:
     """Usa questo tool per cancellare un dato obsoleto dal database prima di salvarne uno nuovo."""
     vettore_query = embeddings.embed_query(vecchia_informazione)
@@ -120,7 +127,7 @@ tab1, tab2 = st.tabs(["🧠 Memoria & Addestramento", "🚀 Pianificazione Proge
 with tab1:
     st.header("Addestra e Interroga il Sistema")
     st.markdown("""
-    * **Esplora:** *"Mostrami tutte le categorie che hai in memoria"* oppure *"Elencami tutto ciò che c'è nei rischi."*
+    * **Esplora:** *"Mostrami tutte le categorie che hai in memoria"*
     * **Insegna:** *"Crea la categoria 'baseline_activity' e inserisci questa regola..."*
     * **Interroga:** *"Chi è il referente per l'integrazione Oracle?"*
     * **Correggi:** *"Ti sbagli, il referente non è Mario, è Luigi."*
@@ -143,7 +150,7 @@ with tab1:
             goal='Gestire la memoria del team: esplorare categorie, rispondere a domande, salvare regole in categorie dinamiche e cancellare dati obsoleti.',
             backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
             tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
-            llm=llm,
+            llm=agente_llm,
             verbose=True
         )
         
@@ -184,21 +191,21 @@ with tab2:
             goal='Analizzare gli impatti e trovare referenti e rischi storici dal DB.',
             backstory='Analista tecnico. Usi il tool di ricerca DB per mappare dipendenze organizzative e criticità passate legate ai sistemi impattati.',
             tools=[tool_ricerca_conoscenza],
-            llm=llm
+            llm=agente_llm
         )
         
         planner = Agent(
             role='Agile Delivery Manager',
             goal='Creare una WBS (Epiche e Sprint) coerente con le regole aziendali estratte dall\'analista.',
             backstory='Agile Coach. Strutturi il piano bilanciando FTE, timeline e rischi tecnici forniti.',
-            llm=llm
+            llm=agente_llm
         )
         
         scribe = Agent(
             role='Jira Scribe & Stakeholder Communicator',
             goal='Redigere ticket Jira e comunicazioni.',
             backstory='Traduttore tecnico. Formatti in ticket Jira "As a... I want..." e scrivi email manageriali ai referenti.',
-            llm=llm
+            llm=agente_llm
         )
         
         t1 = Task(
@@ -226,4 +233,3 @@ with tab2:
         st.success("Analisi e Pianificazione Completata!")
         st.markdown("### Output Operativo del Team")
         st.markdown(risultato_finale.raw)
-
