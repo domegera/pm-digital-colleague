@@ -1,7 +1,7 @@
 import os
 import streamlit as st
 from crewai import Agent, Task, Crew, Process
-from crewai.tools import tool
+from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
@@ -61,9 +61,9 @@ def tool_ricerca_conoscenza(query: str) -> str:
     return "\n\n".join(risultati)
 
 @tool("Esplora Memoria Completa")
-def tool_esplora_memoria(categoria_specifica: str = "") -> str:
-    """Usa questo tool se l'utente ti chiede di mostrargli o elencare tutte le categorie, o di fargli vedere tutto il contenuto di una specifica categoria.
-    Se 'categoria_specifica' è vuota, restituisci solo la lista delle categorie. Se contiene un nome (es. 'rischi'), restituisci tutto il testo di quella categoria."""
+def tool_esplora_memoria(categoria_specifica: str) -> str:
+    """Usa questo tool per elencare tutte le categorie o vederne una specifica.
+    Se vuoi la lista completa di tutte le categorie, passa esattamente la parola 'TUTTE' come parametro."""
     records, _ = qdrant_client.scroll(
         collection_name=collection_name,
         limit=200, 
@@ -82,7 +82,7 @@ def tool_esplora_memoria(categoria_specifica: str = "") -> str:
             mappatura[cat] = []
         mappatura[cat].append(testo)
         
-    if categoria_specifica:
+    if categoria_specifica.upper() != "TUTTE":
         cat_lower = categoria_specifica.lower()
         if cat_lower in mappatura:
             contenuti = "\n".join([f"- {testo}" for testo in mappatura[cat_lower]])
