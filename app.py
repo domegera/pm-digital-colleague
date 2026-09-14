@@ -126,9 +126,12 @@ with tab1:
         
     user_input = st.chat_input("Esplora le categorie, scrivi un comando o una regola...")
     
-    if user_input:
+if user_input:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         st.chat_message("user").write(user_input)
+        
+        # Sostituiamo i ritorni a capo con un separatore per non far impazzire l'Agente
+        input_pulito = user_input.replace('\n', ' | ')
         
         agente_architetto = Agent(
             role='Knowledge Architect & Memory Manager',
@@ -136,15 +139,15 @@ with tab1:
             backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
             tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
             llm=llm,
-            max_iter=5,  # <-- IMPEDISCE I LOOP INFINITI
+            max_iter=5,
             verbose=True
         )
         
         task_addestramento = Task(
-            description=f'''Analizza: "{user_input}".
+            description=f'''Analizza questo input: "{input_pulito}".
             1. Se l'utente vuole ESPLORARE (es. "che categorie hai?"): Usa il tool Esplora Memoria.
-            2. Se l'utente fa una DOMANDA MIRATA (es. "chi è il referente per X?"): Usa il tool Ricerca Base di Conoscenza.
-            3. Se l'utente fornisce un NUOVO DATO: Usa il tool Salva Conoscenza.
+            2. Se l'utente fa una DOMANDA MIRATA: Usa il tool Ricerca Base di Conoscenza.
+            3. Se l'utente fornisce un NUOVO DATO: Usa il tool Salva Conoscenza. 
             4. Se è una CORREZIONE: Usa Elimina Conoscenza, poi Salva Conoscenza.
             Fornisci una risposta discorsiva sulle azioni intraprese o sui dati trovati.''',
             expected_output='Risposta che elenca le categorie, mostra i dati trovati o conferma l\'aggiornamento.',
@@ -152,9 +155,17 @@ with tab1:
         )
         
         with st.spinner("Accesso alla memoria neurale..."):
-            risposta = Crew(agents=[agente_architetto], tasks=[task_addestramento]).kickoff()
-            st.session_state.chat_history.append({"role": "assistant", "content": risposta.raw})
-            st.chat_message("assistant").write(risposta.raw)
+            try:
+                risposta = Crew(agents=[agente_architetto], tasks=[task_addestramento]).kickoff()
+                
+                # Risolve il crash: CrewAI 0.28 restituisce una stringa, le versioni nuove un oggetto.
+                testo_risposta = risposta if isinstance(risposta, str) else getattr(risposta, 'raw', str(risposta))
+                
+                st.session_state.chat_history.append({"role": "assistant", "content": testo_risposta})
+                st.chat_message("assistant").write(testo_risposta)
+            except Exception as e:
+                # Se qualcosa va storto, ora lo vediamo subito invece di restare bloccati
+                st.error(f"⚠️ Errore durante l'elaborazione: {e}")
 
 # --- TAB 2: PIANIFICAZIONE PROGETTO AGILE ---
 with tab2:
