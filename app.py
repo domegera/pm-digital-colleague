@@ -34,10 +34,10 @@ agente_llm = LLM(
     temperature=0.2
 )
 
-# NUOVO CODICE CORRETTO
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="text-embedding-004",
-    google_api_key=GOOGLE_API_KEY
+    model="models/text-embedding-004",
+    google_api_key=GOOGLE_API_KEY,
+    task_type="retrieval_document"
 )
 
 @st.cache_resource
