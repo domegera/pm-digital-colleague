@@ -2,14 +2,14 @@ import os
 import streamlit as st
 from pydantic import BaseModel, Field
 from typing import Type
-from crewai import Agent, Task, Crew, Process, LLM
+from crewai import Agent, Task, Crew, Process  # Removed LLM
 from crewai.tools import BaseTool
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langchain_core.documents import Document
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ==========================================
 # 1. SETUP E CONNESSIONI CLOUD
