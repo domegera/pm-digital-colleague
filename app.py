@@ -9,6 +9,7 @@ from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langchain_core.documents import Document
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ==========================================
 # 1. SETUP E CONNESSIONI CLOUD
@@ -33,11 +34,7 @@ agente_llm = LLM(
     temperature=0.1
 )
 
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="text-embedding-004", 
-    google_api_key=GOOGLE_API_KEY,
-    task_type="retrieval_document"
-)
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
 @st.cache_resource
 def get_qdrant_client():
