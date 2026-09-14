@@ -5,7 +5,6 @@ from typing import Type
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai.tools import BaseTool
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -28,7 +27,7 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
 
 agente_llm = LLM(
-    model="gemini/gemini-1.5-flash",
+    model="gemini/gemini-1.5-flash-latest",
     api_key=GOOGLE_API_KEY,
     temperature=0.1
 )
