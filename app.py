@@ -23,7 +23,7 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.1)
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.1)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
@@ -143,14 +143,18 @@ if user_input:
             verbose=True
         )
         
-        task_addestramento = Task(
-            description=f'''Analizza questo input: "{input_pulito}".
+task_addestramento = Task(
+            description=f'''Analizza questo input dell'utente: "{input_pulito}".
+            
+            REGOLE DI COMPORTAMENTO:
+            0. Se l'input è solo un saluto (es. "Ciao", "Buongiorno") o una frase colloquiale, NON USARE NESSUN TOOL. Rispondi semplicemente in modo amichevole.
             1. Se l'utente vuole ESPLORARE (es. "che categorie hai?"): Usa il tool Esplora Memoria.
-            2. Se l'utente fa una DOMANDA MIRATA: Usa il tool Ricerca Base di Conoscenza.
-            3. Se l'utente fornisce un NUOVO DATO: Usa il tool Salva Conoscenza. 
+            2. Se fa una DOMANDA MIRATA: Usa il tool Ricerca Base di Conoscenza.
+            3. Se fornisce un NUOVO DATO: Usa il tool Salva Conoscenza. 
             4. Se è una CORREZIONE: Usa Elimina Conoscenza, poi Salva Conoscenza.
-            Fornisci una risposta discorsiva sulle azioni intraprese o sui dati trovati.''',
-            expected_output='Risposta che elenca le categorie, mostra i dati trovati o conferma l\'aggiornamento.',
+            
+            Fornisci sempre una "Final Answer" chiara e in italiano.''',
+            expected_output='Una risposta discorsiva, un saluto, oppure la conferma delle operazioni sul database.',
             agent=agente_architetto
         )
         
