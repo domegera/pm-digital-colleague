@@ -23,7 +23,7 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
+llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.1)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
@@ -136,6 +136,7 @@ with tab1:
             backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
             tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
             llm=llm,
+            max_iter=5,  # <-- IMPEDISCE I LOOP INFINITI
             verbose=True
         )
         
