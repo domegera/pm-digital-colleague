@@ -1,11 +1,9 @@
 import os
 import streamlit as st
-from pydantic import BaseModel, Field
-from typing import Type
-from crewai import Agent, Task, Crew, Process, LLM
-from crewai.tools import BaseTool
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_qdrant import QdrantVectorStore
+from crewai import Agent, Task, Crew, Process
+from langchain.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langchain_core.documents import Document
@@ -23,22 +21,10 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
     st.error("⚠️ Chiavi API mancanti. Configura i Secrets su Streamlit Cloud.")
     st.stop()
 
-# Impostiamo le chiavi necessarie sia per Langchain che per LiteLLM (CrewAI)
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
 
-# Motore LLM nativo di CrewAI (risolve i ValidationError)
-agente_llm = LLM(
-    model="gemini/gemini-1.5-flash",
-    api_key=GOOGLE_API_KEY,
-    temperature=0.2
-)
-
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
-    google_api_key=GOOGLE_API_KEY,
-    task_type="retrieval_document"
-)
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
+embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
 def get_qdrant_client():
@@ -52,99 +38,73 @@ def get_qdrant_client():
     return client, collection_name
 
 qdrant_client, collection_name = get_qdrant_client()
-vectorstore = QdrantVectorStore(client=qdrant_client, collection_name=collection_name, embedding=embeddings)
+vectorstore = Qdrant(client=qdrant_client, collection_name=collection_name, embeddings=embeddings)
 
 
 # ==========================================
-# 2. DEFINIZIONE TOOLS DI MEMORIA (STRUTTURA RIGIDA)
+# 2. DEFINIZIONE TOOLS DI MEMORIA RAG
 # ==========================================
+@tool("Salva Conoscenza Aziendale")
+def tool_salva_conoscenza(testo: str, categoria: str) -> str:
+    """Salva una nuova informazione. L'utente può chiederti di usare categorie esistenti o di crearne di nuove (es. 'rischi', 'baseline_activity', 'stack_tecnologico')."""
+    doc = Document(page_content=testo, metadata={"tipo": categoria.lower()})
+    vectorstore.add_documents([doc])
+    return f"Fatto. Informazione salvata nella categoria: {categoria.upper()}."
 
-class SalvaConoscenzaInput(BaseModel):
-    testo: str = Field(..., description="Il testo dell'informazione da salvare.")
-    categoria: str = Field(..., description="La categoria (es. 'rischi', 'stack_tecnologico').")
+@tool("Ricerca Base di Conoscenza")
+def tool_ricerca_conoscenza(query: str) -> str:
+    """Ricerca semantica: usa questo tool per rispondere a domande specifiche su regole, referenti, o architetture cercando nel database."""
+    docs = vectorstore.similarity_search(query, k=6)
+    if not docs:
+        return "Non ho trovato informazioni in memoria a riguardo."
+    risultati = [f"[{d.metadata.get('tipo', 'generico').upper()}]: {d.page_content}" for d in docs]
+    return "\n\n".join(risultati)
 
-class SalvaConoscenzaTool(BaseTool):
-    name: str = "salva_conoscenza"
-    description: str = "Salva una nuova informazione nel database creando o usando categorie specifiche."
-    args_schema: Type[BaseModel] = SalvaConoscenzaInput
+@tool("Esplora Memoria Completa")
+def tool_esplora_memoria(categoria_specifica: str) -> str:
+    """Usa questo tool per elencare tutte le categorie o vederne una specifica. Se vuoi la lista completa di tutte le categorie, passa la parola 'TUTTE' come parametro."""
+    records, _ = qdrant_client.scroll(
+        collection_name=collection_name,
+        limit=200, 
+        with_payload=True,
+        with_vectors=False
+    )
+    if not records:
+        return "Il database è attualmente vuoto."
+        
+    mappatura = {}
+    for r in records:
+        cat = r.payload.get("metadata", {}).get("tipo", "generale")
+        testo = r.payload.get("page_content", "Senza testo")
+        if cat not in mappatura:
+            mappatura[cat] = []
+        mappatura[cat].append(testo)
+        
+    if categoria_specifica.upper() != "TUTTE":
+        cat_lower = categoria_specifica.lower()
+        if cat_lower in mappatura:
+            contenuti = "\n".join([f"- {testo}" for testo in mappatura[cat_lower]])
+            return f"Contenuto della categoria {cat_lower.upper()}:\n{contenuti}"
+        return f"Categoria '{categoria_specifica}' non trovata."
+        
+    elenco_categorie = "\n".join([f"- {cat.upper()} ({len(elementi)} record)" for cat, elementi in mappatura.items()])
+    return f"Categorie attive in memoria:\n{elenco_categorie}"
 
-    def _run(self, testo: str, categoria: str) -> str:
-        doc = Document(page_content=testo, metadata={"tipo": categoria.lower()})
-        vectorstore.add_documents([doc])
-        return f"Fatto. Informazione salvata nella categoria: {categoria.upper()}."
-
-class RicercaConoscenzaInput(BaseModel):
-    query: str = Field(..., description="La domanda o le parole chiave da cercare nel database.")
-
-class RicercaConoscenzaTool(BaseTool):
-    name: str = "ricerca_conoscenza"
-    description: str = "Ricerca semantica: usa questo tool per rispondere a domande specifiche cercando nel database."
-    args_schema: Type[BaseModel] = RicercaConoscenzaInput
-
-    def _run(self, query: str) -> str:
-        docs = vectorstore.similarity_search(query, k=6)
-        if not docs:
-            return "Non ho trovato informazioni in memoria a riguardo."
-        risultati = [f"[{d.metadata.get('tipo', 'generico').upper()}]: {d.page_content}" for d in docs]
-        return "\n\n".join(risultati)
-
-class EsploraMemoriaInput(BaseModel):
-    categoria_specifica: str = Field(..., description="Il nome della categoria da esplorare. Passa 'TUTTE' per vedere solo l'elenco.")
-
-class EsploraMemoriaTool(BaseTool):
-    name: str = "esplora_memoria"
-    description: str = "Elenca tutte le categorie esistenti o mostra tutto il contenuto di una singola categoria."
-    args_schema: Type[BaseModel] = EsploraMemoriaInput
-
-    def _run(self, categoria_specifica: str) -> str:
-        records, _ = qdrant_client.scroll(
-            collection_name=collection_name,
-            limit=200, 
-            with_payload=True,
-            with_vectors=False
-        )
-        if not records:
-            return "Il database è attualmente vuoto."
-            
-        mappatura = {}
-        for r in records:
-            cat = r.payload.get("metadata", {}).get("tipo", "generale")
-            testo = r.payload.get("page_content", "Senza testo")
-            if cat not in mappatura:
-                mappatura[cat] = []
-            mappatura[cat].append(testo)
-            
-        if categoria_specifica.upper() != "TUTTE":
-            cat_lower = categoria_specifica.lower()
-            if cat_lower in mappatura:
-                contenuti = "\n".join([f"- {testo}" for testo in mappatura[cat_lower]])
-                return f"Contenuto della categoria {cat_lower.upper()}:\n{contenuti}"
-            return f"Categoria '{categoria_specifica}' non trovata."
-            
-        elenco_categorie = "\n".join([f"- {cat.upper()} ({len(elementi)} record)" for cat, elementi in mappatura.items()])
-        return f"Categorie attive in memoria:\n{elenco_categorie}"
-
-class EliminaConoscenzaInput(BaseModel):
-    vecchia_informazione: str = Field(..., description="La descrizione esatta dell'informazione obsoleta da cancellare.")
-
-class EliminaConoscenzaTool(BaseTool):
-    name: str = "elimina_conoscenza"
-    description: str = "Cancella un dato obsoleto dal database prima di salvarne uno nuovo."
-    args_schema: Type[BaseModel] = EliminaConoscenzaInput
-
-    def _run(self, vecchia_informazione: str) -> str:
-        vettore_query = embeddings.embed_query(vecchia_informazione)
-        risultati = qdrant_client.search(
-            collection_name=collection_name,
-            query_vector=vettore_query,
-            limit=1
-        )
-        if risultati:
-            id_da_cancellare = risultati[0].id
-            testo_cancellato = risultati[0].payload.get("page_content", "Dato senza testo")
-            qdrant_client.delete(collection_name=collection_name, points_selector=[id_da_cancellare])
-            return f"Memoria aggiornata. Vecchio dato eliminato: '{testo_cancellato}'."
-        return "Nessuna informazione pregressa trovata per l'eliminazione."
+@tool("Elimina e Sovrascrivi Conoscenza")
+def tool_elimina_conoscenza(vecchia_informazione: str) -> str:
+    """Usa questo tool per cancellare un dato obsoleto dal database prima di salvarne uno nuovo."""
+    vettore_query = embeddings.embed_query(vecchia_informazione)
+    risultati = qdrant_client.search(
+        collection_name=collection_name,
+        query_vector=vettore_query,
+        limit=1
+    )
+    if risultati:
+        id_da_cancellare = risultati[0].id
+        testo_cancellato = risultati[0].payload.get("page_content", "Dato senza testo")
+        qdrant_client.delete(collection_name=collection_name, points_selector=[id_da_cancellare])
+        return f"Memoria aggiornata. Vecchio dato eliminato: '{testo_cancellato}'."
+    return "Nessuna informazione pregressa trovata per l'eliminazione."
 
 
 # ==========================================
@@ -157,12 +117,6 @@ tab1, tab2 = st.tabs(["🧠 Memoria & Addestramento", "🚀 Pianificazione Proge
 # --- TAB 1: GESTIONE MEMORIA ---
 with tab1:
     st.header("Addestra e Interroga il Sistema")
-    st.markdown("""
-    * **Esplora:** *"Mostrami tutte le categorie che hai in memoria"*
-    * **Insegna:** *"Crea la categoria 'baseline_activity' e inserisci questa regola..."*
-    * **Interroga:** *"Chi è il referente per l'integrazione Oracle?"*
-    * **Correggi:** *"Ti sbagli, il referente non è Mario, è Luigi."*
-    """)
     
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -180,8 +134,8 @@ with tab1:
             role='Knowledge Architect & Memory Manager',
             goal='Gestire la memoria del team: esplorare categorie, rispondere a domande, salvare regole in categorie dinamiche e cancellare dati obsoleti.',
             backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
-            tools=[SalvaConoscenzaTool(), RicercaConoscenzaTool(), EsploraMemoriaTool(), EliminaConoscenzaTool()],
-            llm=agente_llm,
+            tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
+            llm=llm,
             verbose=True
         )
         
@@ -221,22 +175,22 @@ with tab2:
             role='System & Risk Analyst',
             goal='Analizzare gli impatti e trovare referenti e rischi storici dal DB.',
             backstory='Analista tecnico. Usi il tool di ricerca DB per mappare dipendenze organizzative e criticità passate legate ai sistemi impattati.',
-            tools=[RicercaConoscenzaTool()],
-            llm=agente_llm
+            tools=[tool_ricerca_conoscenza],
+            llm=llm
         )
         
         planner = Agent(
             role='Agile Delivery Manager',
             goal='Creare una WBS (Epiche e Sprint) coerente con le regole aziendali estratte dall\'analista.',
             backstory='Agile Coach. Strutturi il piano bilanciando FTE, timeline e rischi tecnici forniti.',
-            llm=agente_llm
+            llm=llm
         )
         
         scribe = Agent(
             role='Jira Scribe & Stakeholder Communicator',
             goal='Redigere ticket Jira e comunicazioni.',
             backstory='Traduttore tecnico. Formatti in ticket Jira "As a... I want..." e scrivi email manageriali ai referenti.',
-            llm=agente_llm
+            llm=llm
         )
         
         t1 = Task(
@@ -264,3 +218,4 @@ with tab2:
         st.success("Analisi e Pianificazione Completata!")
         st.markdown("### Output Operativo del Team")
         st.markdown(risultato_finale.raw)
+    
