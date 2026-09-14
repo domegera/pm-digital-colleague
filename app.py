@@ -1,8 +1,8 @@
 import os
 import streamlit as st
-from crewai import Agent, Task, Crew, Process, LLM
-from crewai.tools import tool
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from crewai import Agent, Task, Crew, Process
+from langchain.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -22,15 +22,9 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
     st.stop()
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY # Requisito per il nuovo LLM di CrewAI
 
-# Nuova sintassi CrewAI per il motore LLM
-agente_llm = LLM(
-    model="gemini-1.5-flash",
-    api_key=GOOGLE_API_KEY,
-    temperature=0.2
-)
-
+# Ripristino del connettore Langchain, stabile per il Tool Calling
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
@@ -51,8 +45,6 @@ vectorstore = Qdrant(client=qdrant_client, collection_name=collection_name, embe
 # ==========================================
 # 2. DEFINIZIONE TOOLS DI MEMORIA RAG
 # ==========================================
-# Usiamo il decoratore base di CrewAI senza argomenti per prevenire errori Pydantic
-
 @tool
 def tool_salva_conoscenza(testo: str, categoria: str) -> str:
     """Salva una nuova informazione. L'utente può chiederti di usare categorie esistenti o di crearne di nuove (es. 'rischi', 'baseline_activity', 'stack_tecnologico')."""
@@ -150,7 +142,7 @@ with tab1:
             goal='Gestire la memoria del team: esplorare categorie, rispondere a domande, salvare regole in categorie dinamiche e cancellare dati obsoleti.',
             backstory='Sei il cervello operativo. Se l\'utente esplora, usi il tool di esplorazione. Se fa una domanda mirata, usi la ricerca semantica. Se insegna, salvi (creando categorie se richiesto). Se corregge, elimini il dato obsoleto e salvi il nuovo.',
             tools=[tool_salva_conoscenza, tool_ricerca_conoscenza, tool_esplora_memoria, tool_elimina_conoscenza],
-            llm=agente_llm,
+            llm=llm,
             verbose=True
         )
         
@@ -191,21 +183,21 @@ with tab2:
             goal='Analizzare gli impatti e trovare referenti e rischi storici dal DB.',
             backstory='Analista tecnico. Usi il tool di ricerca DB per mappare dipendenze organizzative e criticità passate legate ai sistemi impattati.',
             tools=[tool_ricerca_conoscenza],
-            llm=agente_llm
+            llm=llm
         )
         
         planner = Agent(
             role='Agile Delivery Manager',
             goal='Creare una WBS (Epiche e Sprint) coerente con le regole aziendali estratte dall\'analista.',
             backstory='Agile Coach. Strutturi il piano bilanciando FTE, timeline e rischi tecnici forniti.',
-            llm=agente_llm
+            llm=llm
         )
         
         scribe = Agent(
             role='Jira Scribe & Stakeholder Communicator',
             goal='Redigere ticket Jira e comunicazioni.',
             backstory='Traduttore tecnico. Formatti in ticket Jira "As a... I want..." e scrivi email manageriali ai referenti.',
-            llm=agente_llm
+            llm=llm
         )
         
         t1 = Task(
