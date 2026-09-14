@@ -1,8 +1,5 @@
-streamlit==1.32.0
-crewai==0.28.8
-langchain-google-genai==1.0.3
-langchain-qdrant==0.1.1
-qdrant-client==1.9.0
-google-generativeai==0.5.4
-pydantic==2.7.4
-setuptools==69.5.1
+streamlit
+crewai
+langchain-google-genai
+langchain-qdrant
+qdrant-client
