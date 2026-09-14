@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from crewai import Agent, Task, Crew, Process
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings, HarmCategory, HarmBlockThreshold
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -23,7 +23,16 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.1)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-flash", 
+    temperature=0.1,
+    safety_settings={
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    }
+)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 @st.cache_resource
