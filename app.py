@@ -27,7 +27,7 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
 
 agente_llm = LLM(
-    model="gemini/gemini-flash-latest",
+    model="gemini/gemini-3.1-flash-lite",
     api_key=GOOGLE_API_KEY,
     temperature=0.1
 )
