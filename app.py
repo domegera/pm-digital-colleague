@@ -143,7 +143,7 @@ if user_input:
             verbose=True
         )
         
-task_addestramento = Task(
+        task_addestramento = Task(
             description=f'''Analizza questo input dell'utente: "{input_pulito}".
             
             REGOLE DI COMPORTAMENTO:
