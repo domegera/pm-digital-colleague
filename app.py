@@ -26,7 +26,7 @@ os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY # Requisito per il nuovo LLM di Cr
 
 # Nuova sintassi CrewAI per il motore LLM
 agente_llm = LLM(
-    model="gemini/gemini-1.5-flash",
+    model="gemini-1.5-flash",
     api_key=GOOGLE_API_KEY,
     temperature=0.2
 )
