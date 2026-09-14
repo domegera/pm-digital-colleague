@@ -24,7 +24,7 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash", 
+    model="gemini-pro", 
     temperature=0.1,
     safety_settings={
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
