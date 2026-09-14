@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from pydantic import BaseModel, Field
 from typing import Type
-from crewai import Agent, Task, Crew, Process  # Removed LLM
+from crewai import Agent, Task, Crew, Process, LLM
 from crewai.tools import BaseTool
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -27,10 +27,9 @@ if not GOOGLE_API_KEY or not QDRANT_URL:
 # CrewAI moderno usa LiteLLM sotto il cofano, che cerca questa variabile:
 os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
 
-# Motore LLM via LangChain per bypassare i bug di routing di LiteLLM
-agente_llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
-    google_api_key=GOOGLE_API_KEY,
+agente_llm = LLM(
+    model="gemini/gemini-1.5-flash",
+    api_key=GOOGLE_API_KEY,
     temperature=0.1
 )
 
