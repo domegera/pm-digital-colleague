@@ -34,7 +34,11 @@ agente_llm = LLM(
     temperature=0.2
 )
 
-embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+# NUOVO CODICE CORRETTO
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="text-embedding-004",
+    google_api_key=GOOGLE_API_KEY
+)
 
 @st.cache_resource
 def get_qdrant_client():
