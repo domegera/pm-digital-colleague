@@ -1,6 +1,5 @@
-streamlit
-crewai
-langchain
-langchain-google-genai
-langchain-qdrant
-qdrant-client
+streamlit==1.32.0
+crewai==0.28.8
+langchain-google-genai==1.0.3
+langchain-qdrant==0.1.1
+qdrant-client==1.8.2
